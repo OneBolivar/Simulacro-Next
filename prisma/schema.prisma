@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Roles del sistema
+enum Role {
+  USER
+  ADMIN
+}
+
+// Estados posibles de una subasta según las reglas del proyecto
+enum AuctionStatus {
+  ACTIVE
+  CLOSED
+  DESERTED
+  CANCELLED
+}
+
+// Tabla de Usuarios
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  name             String
+  passwordHash     String
+  role             Role      @default(USER)
+  refreshTokenHash String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relaciones
+  auctions          Auction[] @relation("SellerAuctions")
+  bids              Bid[]
+  cancelledAuctions Auction[] @relation("AdminCancelledAuctions")
+
+  @@map("users")
+}
+
+// Tabla de Categorías (Regla 17: protegida contra eliminación accidental)
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  auctions    Auction[]
+
+  @@map("categories")
+}
+
+// Tabla de Subastas
+model Auction {
+  id                 String        @id @default(uuid())
+  title              String
+  description        String
+  imageUrl           String?
+  initialPrice       Float
+  minIncrement       Float
+  endDate            DateTime
+  status             AuctionStatus @default(ACTIVE)
+
+  // Registro de moderación (Regla 15: cancelación por admin)
+  cancellationReason String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?         @relation("AdminCancelledAuctions", fields: [cancelledById], references: [id])
+
+  // Vendedor
+  sellerId           String
+  seller             User          @relation("SellerAuctions", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  // Categoría asociada (onDelete: Restrict impide borrar la categoría si tiene subastas)
+  categoryId         String
+  category           Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  // Ofertas recibidas
+  bids               Bid[]
+
+  @@map("auctions")
+}
+
+// Tabla de Ofertas (Pujas)
+model Bid {
+  id        String   @id @default(uuid())
+  amount    Float
+  createdAt DateTime @default(now())
+
+  auctionId String
+  auction   Auction  @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+
+  bidderId  String
+  bidder    User     @relation(fields: [bidderId], references: [id], onDelete: Cascade)
+
+  @@index([auctionId, amount(sort: Desc)])
+  @@map("bids")
+}
